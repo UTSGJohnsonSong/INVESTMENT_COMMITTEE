@@ -1,60 +1,70 @@
-# Investment Committee · 投资思想委员会
+# Investment Committee
 
-基于实时一手信息、严格引用、多投资大师思想互相辩论的投资决策辅助系统。
+An evidence-first investment decision support system. Eight committee members — decision frameworks inspired by published investment philosophies — debate the same body of primary-source evidence and synthesize a structured decision with vetoes, scenario ranges and kill criteria.
 
-**不是股票推荐网站。** 它的灵魂是证据管理:每个结论可回溯到一条带来源、URL、时间戳的证据;没有依据的句子只能标为「推测」。
+**Not a stock recommendation site.** The soul of the system is evidence management: every claim traces back to an evidence row with a source, URL and timestamp. Unsourced sentences can only be labeled as inference.
 
-## 运行
+## Quick start
 
 ```bash
 npm install
 npm run dev   # http://localhost:3000
 ```
 
-无需任何 API key——所有数据源都是免 key 的官方/公开端点,运行时现场抓取。
+No API keys required — all data sources are key-free official/public endpoints, fetched live at runtime.
 
-## 数据源 (source hierarchy)
+## Data sources (source hierarchy)
 
-| Level | 来源 | 用途 |
-|-------|------|------|
-| P0 | SEC EDGAR (company_tickers / submissions / XBRL companyfacts) | 财务事实,带 accession number + form type + filed date |
-| P0 | FRED `fredgraph.csv` 公开端点 | DGS10/DGS2/T10Y2Y/DFF/CPI/UNRATE/HY OAS,带 series_id + observation date |
-| P1 | Yahoo Finance chart API (延迟行情) | 价格、动量、波动率、回撤;页面标注 delayed |
+| Level | Source | Used for |
+|-------|--------|----------|
+| P0 | SEC EDGAR (company_tickers / submissions / XBRL companyfacts) | Financial facts, with accession number + form type + filed date |
+| P0 | FRED public `fredgraph.csv` endpoint | DGS10 / DGS2 / T10Y2Y / DFF / CPI / UNRATE / HY OAS, with series ID + observation date |
+| P1 | Yahoo Finance chart API (delayed quotes) | Price, momentum, volatility, drawdown; labeled *delayed* everywhere |
 
-本地开发注意:Yahoo 会对 Node 的 TLS 指纹返回 403,`src/lib/fetcher.ts` 自动降级到 curl 子进程。部署到 Vercel 后原生 fetch 通常直接可用。
+Local dev note: some networks TLS-fingerprint-block Node's fetch for Yahoo; `src/lib/fetcher.ts` automatically falls back to a curl subprocess. On Vercel, native fetch normally works.
 
-## 架构:单向数据流
+## Architecture: one-way data flow
 
 ```
-sources → Evidence[] (带引用) → 8 个 persona 纯函数 → synthesis (veto 机制) → FinalDecision
+sources → Evidence[] (cited) → 8 persona pure functions → synthesis (vetoes) → FinalDecision
 ```
 
-- `src/lib/sources/` — SEC / FRED / 市场数据抓取
-- `src/lib/metrics.ts` — 从 XBRL 提取 revenue/EPS/FCF/margins,每个数字带 citation
-- `src/lib/evidence.ts` — 组装证据表,委员只能消费这张表
-- `src/lib/committee/` — 8 位委员 (Bogle/Markowitz/Buffett/Marks/Dalio/Taleb/Simons/Soros),确定性规则引擎,零幻觉;接口设计支持将来替换为 LLM(LLM 同样只允许看证据表)
-- `src/lib/committee/synthesis.ts` — 合议 + veto (Taleb 尾部风险否决、Marks 情绪过热降仓、Bogle ETF 替代、Simons 数据不支持降 confidence、Buffett 质量差禁 Strong Buy)
-- `src/db/schema.ts` — Drizzle Postgres schema (7 张表),接 Neon 时 `npx drizzle-kit push`;MVP 运行时用内存缓存,不依赖 DB
+- `src/lib/sources/` — SEC / FRED / market data fetchers
+- `src/lib/metrics.ts` — extracts revenue/EPS/FCF/margins from XBRL; every number carries a citation and period metadata (annual / quarterly / instant, reported / derived)
+- `src/lib/evidence.ts` — assembles the evidence table; committee members may only consume these rows
+- `src/lib/committee/` — 8 members (Bogle / Markowitz / Buffett / Marks / Dalio / Taleb / Simons-style quant / Soros), deterministic rule engines, zero hallucination; the interface is designed so an LLM can replace them later (an LLM would also only see the evidence table)
+- `src/lib/committee/synthesis.ts` — direction/constraint separation: five direction members vote the score; Bogle / Markowitz / Taleb are constraint members controlling vetoes, position caps and confidence. Standing vetoes: Taleb tail risk, Marks market-greed (blocks Strong Buy), Bogle no-edge (index substitution), Buffett quality gate, Simons data-contradiction
+- `src/lib/screener.ts` — scans the largest SEC filers (official market-cap ordering, no hand-picking) through the full pipeline
+- `src/lib/basket.ts` — portfolio-level review of a user basket: per-name allocations under Taleb caps, Bogle core-first, Marks cash floor
+- `src/db/schema.ts` — Drizzle Postgres schema (7 tables); wire up Neon with `npx drizzle-kit push`. The MVP runtime uses in-memory caching and does not require a database
 
-## 页面
+## Pages
 
-- `/` — Dashboard:搜索 + 实时宏观环境 + watchlist
-- `/asset/[ticker]` — 研究页:价格图、财务快照、filings、委员会辩论卡、Final Decision Panel、Evidence Panel(可筛选,citation 点击展开 drawer)
-- `/memo/[ticker]` — 可复制的专业投资备忘录,引用按 P0→P3 排序
-- `/portfolio` — 组合影响(简化版;相关性/因子模块明确标 MOCK)
+- `/` — Dashboard: search any US stock/ETF/index, live macro environment, watchlist
+- `/asset/[ticker]` — full research page: decision panel with scenario ranges, price chart, grouped financial snapshot with data-quality badges, committee debate cards, filterable evidence panel with citation drawer
+- `/screener` — committee screener over the 100 largest SEC filers, grouped by sector, transparent sort formula
+- `/strategy` — no ticker: the committee debates current positioning and produces three risk-tiered plans (Conservative / Balanced / Aggressive) with adjustment rules, cash deployment rules and monitoring checklists
+- `/basket` — shopping-basket workflow: collect candidates, submit the basket for a portfolio-level committee review with per-name allocations
+- `/memo/[ticker]` — copyable professional decision memo, citations sorted P0-first
+- `/portfolio` — simplified portfolio impact (concentration, before/after weights)
+- `/guide` — methodology, source hierarchy, badge glossary, committee profiles, full disclaimer
 
-## 明确标记为 MOCK 的部分
+## Internationalization
 
-- Markowitz 相关性假设 (0.8/0.95)
-- Simons 历史回测与因子暴露
-- Portfolio 页相关性矩阵/行业敞口
+English by default; full Chinese via the header toggle (cookie-based). All engine-generated prose is bilingual at the source (`{en, zh}` pairs) — the Chinese mode is a complete translation, not a partial one.
 
-原则:mock 不显示假数字,只显示占位说明。
+## Explicitly mocked (never fake numbers)
 
-## 冒烟测试
+- Markowitz correlation assumptions (0.8 / 0.95 placeholders)
+- Simons-style historical backtests and factor exposures
+- Portfolio page correlation matrix / sector look-through
+
+Principle: mocks show a labeled placeholder note, never fabricated figures.
+
+## Smoke test
 
 ```bash
-npx tsx scripts/smoke.ts   # 用 AAPL 跑全链路,打印证据/委员评分/合议结果
+npx tsx scripts/smoke.ts   # runs the full pipeline on AAPL and prints evidence / votes / synthesis
 ```
 
 ---
