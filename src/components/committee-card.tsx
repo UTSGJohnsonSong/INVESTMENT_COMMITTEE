@@ -1,12 +1,15 @@
 "use client";
-// Summary-first committee card: stance, score, one-line view, top arguments
-// and action are always visible; risks, cross-examination, blind spot and the
-// full evidence list live behind the Details toggle.
+// Summary-first committee card: stance, score, one-line summary, top two
+// arguments and the action are always visible; the full argument list, risks,
+// cross-examination, the member's framework profile and cited evidence live
+// behind the Details toggle — collapsed by default, nothing is lost.
 import { useState } from "react";
 import type { PersonaMeta, PersonaOpinion } from "@/lib/types";
 import { Lang, pick } from "@/lib/i18n";
 import { MockBadge, RatingBar, StanceBadge } from "./ui";
 import { Chips } from "./evidence-drawer";
+
+const COLLAPSED_ARGS = 2;
 
 export function CommitteeCard({
   opinion,
@@ -21,10 +24,15 @@ export function CommitteeCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const zh = lang === "zh";
+  const hiddenArgs = Math.max(0, opinion.arguments.length - COLLAPSED_ARGS);
+  const visibleArgs = expanded
+    ? opinion.arguments
+    : opinion.arguments.slice(0, COLLAPSED_ARGS);
 
   return (
     <div
-      className="bg-panel border border-line rounded-lg overflow-hidden flex flex-col"
+      id={`member-${meta.id}`}
+      className="bg-panel border border-line rounded-lg overflow-hidden flex flex-col scroll-mt-20"
       style={{ borderTopColor: meta.color, borderTopWidth: 2 }}
     >
       <div className="px-4 py-3 border-b border-line">
@@ -51,19 +59,25 @@ export function CommitteeCard({
       </div>
 
       <div className="p-4 space-y-3 flex-1 text-[13px] leading-relaxed">
-        <div className="text-xs italic" style={{ color: meta.color }}>
-          “{pick(meta.firstQuestion, lang)}”
-        </div>
+        <p className="font-medium">{pick(opinion.summary, lang)}</p>
 
         <div>
           <SectionLabel>{zh ? "核心论点" : "Top arguments"}</SectionLabel>
           <ul className="space-y-1.5">
-            {opinion.arguments.slice(0, 3).map((a, i) => (
+            {visibleArgs.map((a, i) => (
               <li key={i}>
                 {pick(a.text, lang)} <Chips ids={a.evidenceIds} />
               </li>
             ))}
           </ul>
+          {!expanded && hiddenArgs > 0 && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="mt-1 text-[11px] text-blue-400 hover:underline"
+            >
+              {zh ? `+${hiddenArgs} 条论点…` : `+${hiddenArgs} more…`}
+            </button>
+          )}
         </div>
 
         <div className="border border-line rounded p-2.5 bg-panel2/50">
@@ -112,9 +126,27 @@ export function CommitteeCard({
               )}
             </div>
 
-            <div>
-              <SectionLabel>{zh ? "该框架的盲区" : "Blind spot of this framework"}</SectionLabel>
-              <p className="text-xs text-muted">{pick(meta.blindSpot, lang)}</p>
+            <div className="border border-line rounded p-2.5 bg-panel2/40 space-y-2">
+              <SectionLabel>
+                {zh ? "该委员的决策框架" : "This member's framework"}
+              </SectionLabel>
+              <FrameworkRow label={zh ? "哲学" : "Philosophy"}>
+                {pick(meta.philosophy, lang)}
+              </FrameworkRow>
+              <FrameworkRow label={zh ? "首要问题" : "First question"}>
+                “{pick(meta.firstQuestion, lang)}”
+              </FrameworkRow>
+              <FrameworkRow label={zh ? "无法容忍" : "Hates"}>
+                {pick(meta.hates, lang)}
+              </FrameworkRow>
+              {meta.vetoRule && (
+                <FrameworkRow label={zh ? "常设否决权" : "Standing veto"}>
+                  {pick(meta.vetoRule, lang)}
+                </FrameworkRow>
+              )}
+              <FrameworkRow label={zh ? "框架盲区" : "Blind spot"}>
+                {pick(meta.blindSpot, lang)}
+              </FrameworkRow>
             </div>
 
             <div>
@@ -143,7 +175,13 @@ export function CommitteeCard({
           onClick={() => setExpanded((s) => !s)}
           className="text-blue-400 hover:underline"
         >
-          {expanded ? (zh ? "收起详情" : "Hide details") : zh ? "展开详情" : "Details"}
+          {expanded
+            ? zh
+              ? "收起详情"
+              : "Hide details"
+            : zh
+              ? "展开详情(风险 · 质询 · 框架档案)"
+              : "Details (risks · cross-exam · framework)"}
         </button>
       </div>
     </div>
@@ -154,6 +192,21 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="text-[10px] uppercase tracking-widest text-muted mb-1">
       {children}
+    </div>
+  );
+}
+
+function FrameworkRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="text-xs">
+      <span className="text-muted">{label} — </span>
+      <span className="text-foreground/85">{children}</span>
     </div>
   );
 }

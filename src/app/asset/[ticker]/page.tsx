@@ -133,7 +133,7 @@ export default async function AssetPage({
         )}
 
         {/* ---- Decision ---- */}
-        <DecisionPanel decision={r.decision} lang={lang} />
+        <DecisionPanel decision={r.decision} opinions={r.opinions} lang={lang} />
 
         {/* ---- Chart + financial snapshot ---- */}
         <div className="grid lg:grid-cols-5 gap-5">
