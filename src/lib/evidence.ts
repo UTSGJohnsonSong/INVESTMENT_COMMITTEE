@@ -126,8 +126,8 @@ export function buildEvidence(input: {
   const mkt = input.market;
   if (q && mkt) {
     const cite = (excerpt: string) => ({
-      sourceName: "Yahoo Finance chart API (delayed)",
-      sourceUrl: `https://finance.yahoo.com/quote/${input.ticker}`,
+      sourceName: mkt.sourceName,
+      sourceUrl: mkt.sourceUrl,
       sourceLevel: "P1" as const,
       sourceType: "market_quote",
       publishedAt: q.lastPriceTime,

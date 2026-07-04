@@ -1,7 +1,10 @@
-// Market data (source level P1, delayed). Yahoo Finance chart endpoint via
-// the robust fetcher (Yahoo TLS-blocks Node locally; curl fallback covers it).
-// Every quote is labeled delayed with its regularMarketTime.
-import { fetchJsonRobust } from "@/lib/fetcher";
+// Market data (source level P1, delayed). Primary: Yahoo Finance chart
+// endpoint. Fallback: Stooq end-of-day CSV (equities/ETFs only — index
+// symbology differs). Both go through the robust fetcher (both TLS-block
+// Node locally; curl fallback covers it). Every quote is labeled delayed
+// with its regularMarketTime, and the actual source is carried on the
+// record so citations name what really served the data.
+import { fetchJsonRobust, fetchTextRobust } from "@/lib/fetcher";
 import type { PricePoint, QuantStats } from "@/lib/types";
 
 interface YahooChart {
@@ -38,14 +41,18 @@ export interface MarketData {
   history: PricePoint[];
   retrievedAt: string;
   sourceUrl: string;
+  /** which provider actually served this run (for citations) */
+  sourceName: string;
+  /** true when served from an expired cache entry after live fetches failed */
+  stale: boolean;
 }
 
-export async function getMarketData(ticker: string): Promise<MarketData | null> {
+async function getYahooData(ticker: string): Promise<MarketData | null> {
   const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     ticker
   )}?range=1y&interval=1d`;
   try {
-    const { data, retrievedAt } = await fetchJsonRobust<YahooChart>(url, {
+    const { data, retrievedAt, stale } = await fetchJsonRobust<YahooChart>(url, {
       ttlMs: 10 * 60 * 1000,
     });
     const res = data.chart?.result?.[0];
@@ -71,10 +78,65 @@ export async function getMarketData(ticker: string): Promise<MarketData | null> 
       history,
       retrievedAt,
       sourceUrl: url,
+      sourceName: "Yahoo Finance chart API (delayed)",
+      stale,
     };
   } catch {
     return null;
   }
+}
+
+// Stooq serves end-of-day daily bars as CSV: Date,Open,High,Low,Close,Volume.
+// US listings use the ".us" suffix. Index symbology differs from Yahoo's
+// caret tickers, so the fallback covers equities/ETFs only.
+async function getStooqData(ticker: string): Promise<MarketData | null> {
+  if (ticker.startsWith("^")) return null;
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const now = new Date();
+  const yearAgo = new Date(now.getTime() - 380 * 86400000);
+  const symbol = `${ticker.toLowerCase()}.us`;
+  const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=d&d1=${fmt(yearAgo)}&d2=${fmt(now)}`;
+  try {
+    const { body, retrievedAt, stale } = await fetchTextRobust(url, {
+      ttlMs: 10 * 60 * 1000,
+      validate: (b) => b.trimStart().toLowerCase().startsWith("date,"),
+    });
+    const lines = body.trim().split("\n");
+    const history: PricePoint[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",");
+      const close = parseFloat(cols[4]);
+      if (!cols[0] || Number.isNaN(close)) continue;
+      history.push({ date: cols[0], close: Math.round(close * 100) / 100 });
+    }
+    if (history.length < 2) return null;
+    const last = history[history.length - 1];
+    return {
+      name: null,
+      exchange: null,
+      instrumentType: "EQUITY",
+      currency: "USD",
+      lastPrice: last.close,
+      lastPriceTime: `${last.date}T00:00:00.000Z`,
+      marketState: "EOD",
+      history,
+      retrievedAt,
+      sourceUrl: url,
+      sourceName: "Stooq end-of-day CSV (fallback, EOD close)",
+      stale,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getMarketData(ticker: string): Promise<MarketData | null> {
+  const yahoo = await getYahooData(ticker);
+  // A stale Yahoo answer loses to a live Stooq answer, but beats nothing.
+  if (yahoo && !yahoo.stale) return yahoo;
+  const stooq = await getStooqData(ticker);
+  if (stooq && !stooq.stale) return stooq;
+  return yahoo ?? stooq;
 }
 
 export function computeQuantStats(m: MarketData): QuantStats {

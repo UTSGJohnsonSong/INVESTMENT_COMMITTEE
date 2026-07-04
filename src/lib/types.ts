@@ -103,6 +103,8 @@ export interface PersonaOpinion {
   veto?: { triggered: boolean; reason: L; effect: L };
   dataFreshness: string;
   usesMockData: boolean;
+  /** true when the qualitative text was deepened by the optional LLM layer */
+  llmEnriched?: boolean;
 }
 
 export type OverallRating =
@@ -186,6 +188,8 @@ export interface MacroSnapshot {
   url: string;
   /** derived, e.g. YoY for CPI */
   derived?: string;
+  /** true when served from an expired cache entry after live fetches failed */
+  stale?: boolean;
 }
 
 export type PeriodType = "annual" | "quarterly" | "instant" | "derived";

@@ -44,6 +44,18 @@ export function CommitteeCard({
             <div className="text-[11px] text-muted">{pick(meta.title, lang)}</div>
           </div>
           <div className="flex items-center gap-1.5">
+            {opinion.llmEnriched && (
+              <span
+                className="text-[10px] uppercase px-1.5 py-1 rounded border bg-violet-500/15 text-violet-400 border-violet-500/40"
+                title={
+                  zh
+                    ? "定性论证由 LLM 深化(仅可引用证据表);评分与否决仍由规则引擎决定"
+                    : "Qualitative text deepened by LLM (evidence-only citations); ratings and vetoes remain rule-based"
+                }
+              >
+                LLM
+              </span>
+            )}
             {opinion.usesMockData && <MockBadge />}
             {opinion.veto?.triggered && (
               <span className="text-[10px] uppercase px-1.5 py-1 rounded border bg-red-500/15 text-bearish border-red-500/40">

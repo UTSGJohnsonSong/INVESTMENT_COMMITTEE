@@ -12,6 +12,7 @@ import { computeQuantStats, getMarketData } from "@/lib/sources/market";
 import { deriveFinancials } from "@/lib/metrics";
 import { buildEvidence } from "@/lib/evidence";
 import { runCommittee } from "@/lib/committee";
+import { enrichWithLLM } from "@/lib/committee/llm";
 
 const resultCache = new Map<string, { result: AnalysisResult; expires: number }>();
 
@@ -64,11 +65,33 @@ export async function analyzeTicker(
         "市场价格数据获取失败:本次分析无价格/动量证据。"
       )
     );
+  if (market?.stale)
+    dataWarnings.push(
+      l(
+        `Market data is STALE: live fetch failed; serving the last successful pull from ${market.retrievedAt} (${market.sourceName}).`,
+        `市场数据为 STALE:实时获取失败,当前展示的是 ${market.retrievedAt} 的上次成功数据(${market.sourceName})。`
+      )
+    );
+  if (market && !market.stale && market.sourceName.includes("Stooq"))
+    dataWarnings.push(
+      l(
+        "Primary market source (Yahoo) failed; price data comes from the Stooq end-of-day fallback (EOD close, no intraday).",
+        "主市场源(Yahoo)失败,价格数据来自 Stooq 日线备用源(收盘价,无盘中数据)。"
+      )
+    );
   if (macro.length === 0)
     dataWarnings.push(
       l(
         "FRED macro data unavailable: the macro committee members cannot judge.",
         "FRED 宏观数据获取失败:宏观委员的判断不可用。"
+      )
+    );
+  const staleMacro = macro.filter((m) => m.stale);
+  if (staleMacro.length > 0)
+    dataWarnings.push(
+      l(
+        `Macro series STALE (live fetch failed, serving last successful pull): ${staleMacro.map((m) => m.seriesId).join(", ")}.`,
+        `宏观序列为 STALE(实时获取失败,展示上次成功数据):${staleMacro.map((m) => m.seriesId).join("、")}。`
       )
     );
 
@@ -192,6 +215,11 @@ export async function analyzeTicker(
     macro,
     isEtf,
   });
+
+  // Optional LLM layer: deepens qualitative text only (evidence-only, ids
+  // validated); scores/vetoes stay deterministic. No-op without an API key.
+  const llm = await enrichWithLLM({ asset, evidence: ctx.evidence, opinions });
+  if (llm.warning) dataWarnings.push(llm.warning);
 
   const result: AnalysisResult = {
     asset,

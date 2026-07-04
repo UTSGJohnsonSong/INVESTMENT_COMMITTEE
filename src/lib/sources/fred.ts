@@ -36,9 +36,14 @@ function parseCsv(body: string): { date: string; value: number }[] {
 
 async function fetchSeries(spec: SeriesSpec): Promise<MacroSnapshot | null> {
   try {
-    const { body, retrievedAt } = await fetchTextRobust(
+    const { body, retrievedAt, stale } = await fetchTextRobust(
       `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${spec.id}`,
-      { ttlMs: 60 * 60 * 1000 }
+      {
+        ttlMs: 60 * 60 * 1000,
+        // header row is "observation_date,<SERIES_ID>" (older: "DATE,...") —
+        // reject HTML error pages
+        validate: (b) => /^(observation_)?date,/i.test(b.trimStart()),
+      }
     );
     const obs = parseCsv(body);
     if (obs.length === 0) return null;
@@ -60,6 +65,7 @@ async function fetchSeries(spec: SeriesSpec): Promise<MacroSnapshot | null> {
         retrievedAt,
         url: `https://fred.stlouisfed.org/series/${spec.id}`,
         derived: `YoY from index ${prior.value} (${prior.date}) to ${last.value} (${last.date})`,
+        stale,
       };
     }
 
@@ -71,6 +77,7 @@ async function fetchSeries(spec: SeriesSpec): Promise<MacroSnapshot | null> {
       observationDate: last.date,
       retrievedAt,
       url: `https://fred.stlouisfed.org/series/${spec.id}`,
+      stale,
     };
   } catch {
     return null;
