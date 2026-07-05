@@ -2,6 +2,7 @@
 // Uses the public fredgraph.csv endpoint, which needs no API key and serves
 // the same official series as the FRED API. Each snapshot records series_id,
 // latest observation date, and retrieval time, per the citation rules.
+import { unstable_cache } from "next/cache";
 import { fetchTextRobust } from "@/lib/fetcher";
 import type { MacroSnapshot } from "@/lib/types";
 
@@ -84,7 +85,40 @@ async function fetchSeries(spec: SeriesSpec): Promise<MacroSnapshot | null> {
   }
 }
 
-export async function getMacroSnapshots(): Promise<MacroSnapshot[]> {
+async function fetchMacroSnapshots(): Promise<MacroSnapshot[]> {
   const results = await Promise.all(SERIES.map(fetchSeries));
-  return results.filter((r): r is MacroSnapshot => r !== null);
+  const snapshots = results.filter((r): r is MacroSnapshot => r !== null);
+  // A total FRED outage must NOT be cached as an empty panel for the whole
+  // window: throw so unstable_cache stores nothing and keeps serving the last
+  // good pull (or retries on the next request) instead of freezing the
+  // "temporarily unavailable" state for an hour.
+  if (snapshots.length === 0) throw new Error("all FRED series failed");
+  return snapshots;
+}
+
+// Durable, cross-instance cache (Vercel Data Cache): a single successful pull
+// is shared across every request and serverless instance for the window, so a
+// cold instance or a transient block on one request no longer blanks the macro
+// panel. FRED daily series only update once a day, so an hour is plenty fresh.
+const getMacroCached = unstable_cache(fetchMacroSnapshots, ["macro-snapshots-v1"], {
+  revalidate: 60 * 60,
+});
+
+export async function getMacroSnapshots(): Promise<MacroSnapshot[]> {
+  try {
+    return await getMacroCached();
+  } catch (e) {
+    // Outside the Next.js server runtime (scripts/tests) unstable_cache throws
+    // "incrementalCache missing" before running — fall back to an uncached
+    // pull. On a real FRED outage the inner throw also lands here; return [] so
+    // callers render the honest "temporarily unavailable" state.
+    if (e instanceof Error && e.message.includes("incrementalCache missing")) {
+      try {
+        return await fetchMacroSnapshots();
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
 }

@@ -47,8 +47,8 @@ export function soros(input: CommitteeInput): PersonaOpinion {
     ),
     arg(
       l(
-        `Trigger leg: curve ${curve ?? "n/a"}%, CPI ${cpi ?? "n/a"}%. Real triggers — policy pivots, liquidity inflections — need Fed-meeting and flows data, insufficient this round. No trigger, no license for a concentrated bet.`,
-        `触发器腿:曲线 ${curve ?? "n/a"}%,CPI ${cpi ?? "n/a"}%。政策转向、流动性拐点这类真正的触发器需要 Fed 会议/流量数据,本期证据不足——没有触发器,就没有集中下注的资格。`
+        `Trigger leg: a trend isn't a reason, it's a symptom. Reflexivity needs a NAMED catalyst — one of: (a) earnings/guidance surprise, (b) order-book or backlog inflection, (c) analyst estimate revisions turning, (d) a cyclical/inventory turn, (e) a liquidity or policy shift, (f) a capex acceleration. Of these, only (e) has any evidence here — real rates via the yield curve (${curve ?? "n/a"}%) and CPI (${cpi ?? "n/a"}%) — and it is currently ${curve !== null && curve < 0 ? "inverted, a tightening signal, not an easing trigger" : "not signaling an imminent easing shift"}. (a)-(d) and (f) are completely unverified this round — no earnings calendar, no estimate-revision, no capex data in this evidence set. Default answer: no verified catalyst.`,
+        `触发器腿:趋势不是理由,是症状。反身性需要一个「点名」的触发器,以下六选一:(a)财报/指引超预期,(b)订单/积压订单拐点,(c)分析师预期上修转向,(d)周期/库存拐点,(e)流动性或政策转向,(f)资本开支加速。这六项里,只有 (e) 在本次证据中有支撑——通过收益率曲线(${curve ?? "n/a"}%)和 CPI(${cpi ?? "n/a"}%)体现真实利率——而它目前${curve !== null && curve < 0 ? "倒挂,是收紧信号,不是宽松触发器" : "并未显示即将转向宽松"}。(a)-(d) 和 (f) 本期完全未经验证——本次证据里没有财报日历、没有预期上修数据、没有资本开支数据。默认答案:没有已验证的触发器。`
       ),
       ids(ctx, "macro_T10Y2Y", "macro_CPIAUCSL"),
       true

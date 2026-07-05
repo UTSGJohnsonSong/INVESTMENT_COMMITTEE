@@ -13,8 +13,8 @@ import { deriveFinancials } from "@/lib/metrics";
 import { buildEvidence } from "@/lib/evidence";
 import { runCommittee } from "@/lib/committee";
 import { enrichWithLLM } from "@/lib/committee/llm";
-
-const resultCache = new Map<string, { result: AnalysisResult; expires: number }>();
+import { computeHoldingCorrelations } from "@/lib/portfolio-context";
+import { unstable_cache } from "next/cache";
 
 // Common index / natural-language aliases → Yahoo symbols. Indices have no
 // SEC filer; they go through the fund/index committee path.
@@ -38,26 +38,75 @@ const ALIASES: Record<string, string> = {
 };
 
 export async function analyzeTicker(
-  rawTicker: string
+  rawTicker: string,
+  opts: { holdingTickers?: string[] } = {}
 ): Promise<AnalysisResult | null> {
   let ticker = rawTicker.trim().toUpperCase();
   ticker = ALIASES[ticker] ?? ticker;
   if (!/^\^?[A-Z0-9.\-]{1,12}$/.test(ticker)) return null;
 
-  // version-prefixed key so stale pre-refactor objects can never be served
-  const cacheKey = `v3:${ticker}`;
-  const hit = resultCache.get(cacheKey);
-  if (hit && hit.expires > Date.now()) return hit.result;
+  const holdingTickers = [...new Set((opts.holdingTickers ?? []).map((t) => t.trim().toUpperCase()).filter(Boolean))].sort();
 
+  // Durable, cross-instance cache (Vercel Data Cache): the whole analysis —
+  // including the optional LLM pass and every external fetch — is recomputed at
+  // most once per ticker+holdings per revalidate window, then reused across all
+  // requests and serverless instances. runAnalysis THROWS (never returns null)
+  // on a total data failure, so a transient outage is never cached as a
+  // "not found".
+  try {
+    return await getCachedAnalysis(ticker, holdingTickers);
+  } catch (e) {
+    // Outside the Next.js server runtime (smoke scripts, tests, non-request
+    // callers) the incremental cache store is absent and unstable_cache throws
+    // before running. Fall back to an uncached run so those callers still work;
+    // in production the store is always present and this branch never fires.
+    if (e instanceof Error && e.message.includes("incrementalCache missing")) {
+      try {
+        return await runAnalysis(ticker, holdingTickers);
+      } catch {
+        return null;
+      }
+    }
+    // runAnalysis itself threw (total data failure) — treat as not found. The
+    // throw is never cached, so a transient outage won't stick for the window.
+    return null;
+  }
+}
+
+const getCachedAnalysis = unstable_cache(
+  (ticker: string, holdingTickers: string[]) => runAnalysis(ticker, holdingTickers),
+  ["analyze-ticker-v3"],
+  { revalidate: 600 }
+);
+
+async function runAnalysis(
+  ticker: string,
+  holdingTickers: string[]
+): Promise<AnalysisResult> {
   const dataWarnings: L[] = [];
 
-  const [market, identity, macro] = await Promise.all([
+  // Resolve identity first so the SEC filings/facts fetches can start the
+  // moment the CIK is known, overlapping with the identity-independent market
+  // and macro fetches instead of waiting for them to complete.
+  const identityP = resolveTickerToCik(ticker).catch(() => null);
+  type FilingsRes = Awaited<ReturnType<typeof getRecentFilings>> | null;
+  type FactsRes = Awaited<ReturnType<typeof getCompanyFacts>> | null;
+  const secP: Promise<[FilingsRes, FactsRes]> = identityP.then((id) =>
+    id
+      ? Promise.all([
+          getRecentFilings(id).catch(() => null),
+          getCompanyFacts(id).catch(() => null),
+        ])
+      : [null, null]
+  );
+  const [market, identity, macro, [filingsRes, factsRes]] = await Promise.all([
     getMarketData(ticker),
-    resolveTickerToCik(ticker).catch(() => null),
+    identityP,
     getMacroSnapshots().catch(() => []),
+    secP,
   ]);
 
-  if (!market && !identity) return null;
+  if (!market && !identity) throw new Error("no market or identity data");
   if (!market)
     dataWarnings.push(
       l(
@@ -101,10 +150,6 @@ export async function analyzeTicker(
   let sharesOutstanding: Parameters<typeof buildEvidence>[0]["sharesOutstanding"] = null;
 
   if (identity) {
-    const [filingsRes, factsRes] = await Promise.all([
-      getRecentFilings(identity).catch(() => null),
-      getCompanyFacts(identity).catch(() => null),
-    ]);
     if (filingsRes) {
       filings = filingsRes.filings;
       sicDescription = filingsRes.sicDescription;
@@ -198,6 +243,14 @@ export async function analyzeTicker(
 
   const quant = market ? computeQuantStats(market) : null;
 
+  // Real portfolio correlation (Markowitz): only computed when the caller
+  // supplies actual holdings (wired from the user's basket). Without them
+  // the persona falls back to its labeled placeholder assumption.
+  const portfolioContext =
+    market && holdingTickers.length > 0
+      ? await computeHoldingCorrelations(ticker, market, holdingTickers).catch(() => null)
+      : null;
+
   const ctx = buildEvidence({
     ticker,
     financials,
@@ -206,6 +259,7 @@ export async function analyzeTicker(
     market,
     filings,
     sharesOutstanding,
+    portfolioContext,
   });
 
   const { opinions, decision } = runCommittee({
@@ -214,6 +268,7 @@ export async function analyzeTicker(
     quant,
     macro,
     isEtf,
+    portfolioContext,
   });
 
   // Optional LLM layer: deepens qualitative text only (evidence-only, ids
@@ -235,6 +290,5 @@ export async function analyzeTicker(
     dataWarnings,
   };
 
-  resultCache.set(cacheKey, { result, expires: Date.now() + 10 * 60 * 1000 });
   return result;
 }

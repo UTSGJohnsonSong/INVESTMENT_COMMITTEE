@@ -10,6 +10,7 @@ import type {
   Direction,
 } from "@/lib/types";
 import type { MarketData } from "@/lib/sources/market";
+import type { PortfolioContext } from "@/lib/portfolio-context";
 import { fmtUsd } from "@/lib/metrics";
 import { l } from "@/lib/i18n";
 
@@ -39,6 +40,7 @@ export function buildEvidence(input: {
   market: MarketData | null;
   filings: FilingRecord[];
   sharesOutstanding?: { value: number; citationExcerpt: string; url: string; publishedAt: string; retrievedAt: string } | null;
+  portfolioContext?: PortfolioContext | null;
 }): EvidenceContext {
   counter = 0;
   const evidence: Evidence[] = [];
@@ -237,6 +239,37 @@ export function buildEvidence(input: {
         confidence: 78,
         isMock: false,
       });
+  }
+
+  // --- Real portfolio correlation (Markowitz): only present when the caller
+  // supplied actual holdings. Each successfully computed correlation becomes
+  // its own citable evidence row so the persona's argument is traceable.
+  if (input.portfolioContext) {
+    const pc = input.portfolioContext;
+    for (const c of pc.correlations) {
+      if (c.correlation === null) continue;
+      push({
+        statement: l(
+          `Correlation to ${c.ticker} (${c.overlapDays} trading days of aligned daily returns): ${c.correlation.toFixed(2)}`,
+          `与 ${c.ticker} 的相关性(${c.overlapDays} 个交易日对齐日收益):${c.correlation.toFixed(2)}`
+        ),
+        direction: "neutral",
+        tags: ["quant", "valuation"],
+        citation: {
+          sourceName: "Derived: Pearson correlation of daily log returns",
+          sourceUrl: `https://finance.yahoo.com/quote/${c.ticker}`,
+          sourceLevel: "P1",
+          sourceType: "derived",
+          publishedAt: mkt?.retrievedAt ?? new Date().toISOString(),
+          retrievedAt: mkt?.retrievedAt ?? new Date().toISOString(),
+          excerpt: `corr(${input.ticker}, ${c.ticker}) over ${c.overlapDays} aligned trading days = ${c.correlation.toFixed(3)}`,
+        },
+        metricName: `corr_${c.ticker}`,
+        metricValue: c.correlation,
+        confidence: c.overlapDays >= 180 ? 70 : 55,
+        isMock: false,
+      });
+    }
   }
 
   // --- Derived valuation: P/E from delayed price + SEC diluted EPS ---

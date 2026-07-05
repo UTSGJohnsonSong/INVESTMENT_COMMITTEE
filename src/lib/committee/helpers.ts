@@ -9,6 +9,7 @@ import type {
   QuantStats,
 } from "@/lib/types";
 import type { EvidenceContext } from "@/lib/evidence";
+import type { PortfolioContext } from "@/lib/portfolio-context";
 import type { L } from "@/lib/i18n";
 
 export interface CommitteeInput {
@@ -17,6 +18,8 @@ export interface CommitteeInput {
   quant: QuantStats | null;
   macro: MacroSnapshot[];
   isEtf: boolean;
+  /** real correlation to the user's actual holdings; null when none were supplied */
+  portfolioContext?: PortfolioContext | null;
 }
 
 /** metric value by name, or null */

@@ -21,19 +21,26 @@ import {
 import { Chips } from "@/components/evidence-drawer";
 import { WhatChanged } from "@/components/what-changed";
 import { CartButton } from "@/components/cart";
+import { AutoHoldingsParam } from "@/components/auto-holdings-param";
 import type { FinancialMetric } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function AssetPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ ticker: string }>;
+  searchParams: Promise<{ holdings?: string }>;
 }) {
   const { ticker } = await params;
+  const { holdings } = await searchParams;
+  const holdingTickers = holdings
+    ? holdings.split(",").map((t) => t.trim()).filter(Boolean)
+    : undefined;
   const lang = langFromCookie((await cookies()).get("lang")?.value);
   const zh = lang === "zh";
-  const r = await analyzeTicker(decodeURIComponent(ticker));
+  const r = await analyzeTicker(decodeURIComponent(ticker), { holdingTickers });
   if (!r) notFound();
 
   const usedBy: Record<string, PersonaId[]> = {};
@@ -56,6 +63,7 @@ export default async function AssetPage({
       personaNames={personaNames}
       lang={lang}
     >
+      <AutoHoldingsParam ticker={r.asset.ticker} hasHoldingsParam={!!holdings} />
       <div className="space-y-5">
         {/* ---- Header ---- */}
         <div className="flex flex-wrap items-end gap-x-6 gap-y-2">

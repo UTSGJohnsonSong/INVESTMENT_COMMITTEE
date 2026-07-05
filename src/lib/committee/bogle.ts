@@ -68,7 +68,9 @@ export function bogle(input: CommitteeInput): PersonaOpinion {
     );
   }
 
-  // Single stock: does the active thesis clear the bar?
+  // Single stock: DEFAULT IS NO. The active thesis must clear an explicit
+  // checklist of override conditions before a satellite position is even
+  // discussed — this is a gate, not a score.
   const roe = val(ctx, "roe");
   const revYoy = yoyOf(ctx, "revenue");
   const pe = val(ctx, "pe_trailing");
@@ -87,8 +89,8 @@ export function bogle(input: CommitteeInput): PersonaOpinion {
   args.push(
     arg(
       l(
-        `The bar for beating the index with single stocks is high. Verifiable edge evidence: ${edge}/4 (ROE ${roe ?? "n/a"}%, revenue ${pct(revYoy)} YoY, FCF ${fcfWord.en}, P/E ${pe ?? "n/a"}).`,
-        `个股相对指数的超额收益门槛很高。当前可核实的 edge 证据:${edge}/4 项(ROE ${roe ?? "n/a"}%、营收 ${pct(revYoy)} YoY、FCF ${fcfWord.zh}、P/E ${pe ?? "n/a"})。`
+        `Default position: NO. A single stock is admitted only if it clears every one of these conditions — otherwise the index does this job better. (1) Verifiable active-edge evidence ≥3/4: ${edge}/4 (ROE ${roe ?? "n/a"}%, revenue ${pct(revYoy)} YoY, FCF ${fcfWord.en}, P/E ${pe ?? "n/a"}). (2) Fees/expense ratio comparable to indexing — not applicable to a single stock, always satisfied. (3) Tax treatment reasonable for the account it sits in — cannot be verified from this evidence, your responsibility to confirm. (4) Position stays small enough that a total loss doesn't matter to the plan. (5) It never becomes large enough to replace the index core.`,
+        `默认立场:不买。个股只有同时满足以下全部条件才被允许进入组合,否则指数做得更好。(1)可核实的主动 edge 证据 ≥3/4:${edge}/4 项(ROE ${roe ?? "n/a"}%、营收 ${pct(revYoy)} YoY、FCF ${fcfWord.zh}、P/E ${pe ?? "n/a"})。(2)费用/税前成本不劣于指数化——个股天然满足,不适用。(3)税务处理在所在账户类型下合理——本次证据无法核实,由你自行确认。(4)仓位足够小,即使归零也不影响整体计划。(5)它永远不会大到取代指数核心仓位。`
       ),
       ids(ctx, "roe", "revenue", "free_cash_flow", "pe_trailing")
     )
@@ -136,12 +138,12 @@ export function bogle(input: CommitteeInput): PersonaOpinion {
     input, rating, args, risks,
     edge >= 3
       ? l(
-          "Acceptable as a satellite position, but the core stays in broad index funds; cap the single stock at ~10% of the portfolio.",
-          "允许作为 satellite(卫星仓)持有,但核心仓位仍应是宽基指数;个股上限建议不超过组合 10%。"
+          "Exception granted on edge evidence (3+/4) — but conditions 2–5 above are still on you to verify: fees, tax placement, position size, and never letting it replace the core. Cap the single stock at ~10% of the portfolio; the core stays in broad index funds.",
+          "在 edge 证据上(3+/4 项)获得例外——但上面第 2–5 条仍需你自行核实:费用、税务归属、仓位大小,以及绝不让它取代核心仓位。个股上限建议不超过组合 10%,核心仍应是宽基指数。"
         )
       : l(
-          "Index-first: the evidence does not justify deviating from the index. Get exposure through a broad ETF — the company is in the index anyway.",
-          "index-first:当前证据不足以支持偏离指数,建议用宽基 ETF 获得该公司的敞口(它本来就在指数里)。"
+          "Default holds — no exception. The evidence does not clear the edge bar, so the checklist stops at condition 1. Get exposure through a broad ETF — the company is in the index anyway.",
+          "默认立场维持——不予例外。证据未通过第一条 edge 门槛,清单在此终止。建议用宽基 ETF 获得该公司的敞口(它本来就在指数里)。"
         ),
     l(
       "Why not just buy the index? What exactly is your edge — information, analysis, or just emotion?",

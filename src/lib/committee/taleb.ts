@@ -66,8 +66,8 @@ export function taleb(input: CommitteeInput): PersonaOpinion {
             "Worst-case:宽基 ETF 归零需要系统性崩溃,但 30–50% 回撤是历史常态,必须按“会发生”来配置。"
           )
         : l(
-            "Worst case: a single company has paths to zero — regulation, litigation, technological displacement, accounting fraud. None of these live inside historical volatility.",
-            "Worst-case:单一公司存在归零路径——监管、诉讼、技术替代、财务造假,这些都不在历史波动率里。"
+            "This evidence table has no unit that measures single-point ruin — a max drawdown computed on historical prices cannot see the events that haven't happened yet. It's an unfair question by design: I cannot answer any of these from the data, and neither can you without leaving this page.",
+            "这份证据表没有能衡量单点毁灭风险的单位——用历史价格算出的最大回撤,看不见还没发生过的事件。这本来就是个不公平的问题:我无法从数据回答下面任何一条,你不去查别的资料也一样答不出来。"
           ),
       ids(ctx, "max_drawdown_1y"),
       true
@@ -81,6 +81,26 @@ export function taleb(input: CommitteeInput): PersonaOpinion {
       true
     ),
   ];
+
+  if (!isEtf) {
+    const taxonomy = [
+      l("technological displacement (a substitute makes the product obsolete)", "技术替代(替代品让产品过时)"),
+      l("customer or supplier concentration (loss of one counterparty is existential)", "客户或供应商集中度(失去单一对手方即致命)"),
+      l("regulatory or legal action (a ruling or law changes the business overnight)", "监管或法律行动(一纸裁决或法规一夜改变生意)"),
+      l("accounting or audit integrity (the numbers in this evidence table are wrong)", "会计或审计诚信问题(这份证据表里的数字本身是错的)"),
+      l("supply chain or geopolitical exposure (a single node or border closes)", "供应链或地缘政治敞口(单一节点或边境关闭)"),
+    ];
+    args.push(
+      arg(
+        l(
+          `Single-point ruin checklist — none of these are verifiable from SEC filings or price history, and that is exactly the point: ${taxonomy.map((t) => t.en).join("; ")}. A "no red flags in the 10-K" is not the same as "verified absent."`,
+          `单点毁灭风险清单——以下每一项都无法从 SEC filing 或价格历史核实,而这正是问题所在:${taxonomy.map((t) => t.zh).join("；")}。「10-K 里没有红旗」不等于「已核实不存在」。`
+        ),
+        [],
+        true
+      )
+    );
+  }
 
   const risks = [
     arg(

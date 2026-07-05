@@ -303,6 +303,35 @@ export function deriveFinancials(
     }
   }
 
+  // Capex intensity (derived): how capital-heavy the business is, matched to
+  // the same annual period as revenue. Used by the business-quality persona
+  // to distinguish an asset-light moat (brand/IP/switching costs) from a
+  // capital-intensive one (scale, vulnerable to capex-cycle downturns).
+  if (revSeries && capexFound) {
+    const capexSeries = annualSeries(capexFound.entries);
+    const rev = revSeries[0];
+    const capex = capexSeries.find((e) => e.end === rev.end);
+    if (capex && rev.val !== 0) {
+      out.push({
+        name: "capex_intensity",
+        label: "Capex Intensity (capex / revenue)",
+        value: Math.round((capex.val / rev.val) * 10000) / 100,
+        unit: "%",
+        period: periodLabel(rev, "annual"),
+        periodEnd: rev.end,
+        periodType: "annual",
+        basis: "derived",
+        yoyChange: null,
+        citation: makeCitation(
+          capex,
+          cikRaw,
+          retrievedAt,
+          `Capex intensity ${periodLabel(rev, "annual")} = ${fmtUsd(capex.val)} / ${fmtUsd(rev.val)}`
+        ),
+      });
+    }
+  }
+
   // Balance sheet instants
   const pushInstant = (key: keyof typeof TAGS, name: string, label: string) => {
     const found = getEntries(facts, TAGS[key]);

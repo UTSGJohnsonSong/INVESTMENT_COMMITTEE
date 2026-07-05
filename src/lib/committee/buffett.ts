@@ -1,5 +1,5 @@
 import type { PersonaOpinion } from "@/lib/types";
-import { l } from "@/lib/i18n";
+import { l, type L } from "@/lib/i18n";
 import {
   CommitteeInput,
   arg,
@@ -62,6 +62,7 @@ export function buffett(input: CommitteeInput): PersonaOpinion {
   const revYoy = yoyOf(ctx, "revenue");
   const de = val(ctx, "debt_to_equity");
   const pe = val(ctx, "pe_trailing");
+  const capexIntensity = val(ctx, "capex_intensity");
 
   // Moat score: pricing power shows up as sustained margins and ROE.
   let moat = 40;
@@ -69,6 +70,36 @@ export function buffett(input: CommitteeInput): PersonaOpinion {
   if (nm !== null) moat += nm > 20 ? 20 : nm > 10 ? 8 : -10;
   if (roe !== null) moat += roe > 25 ? 15 : roe > 12 ? 6 : -10;
   moat = clamp(moat, 0, 100);
+
+  // Moat SOURCE, not just moat SCORE. High margin + low capex intensity looks
+  // like brand/IP/switching-cost economics; high margin + heavy capex looks
+  // like a scale story that lives or dies with the capex cycle. Neither can
+  // actually be confirmed from XBRL alone — that gap is stated explicitly
+  // rather than asserted as fact.
+  let moatSource: L;
+  let moatSourceIsCyclical = false;
+  if (gm === null || capexIntensity === null) {
+    moatSource = l(
+      "Moat source cannot be determined from this evidence set (missing gross margin or capex data) — the moat score above measures durability of results, not their cause.",
+      "护城河来源无法从当前证据判断(缺毛利率或资本开支数据)——上面的护城河评分衡量的是结果的持续性,不是它的成因。"
+    );
+  } else if (gm > 45 && capexIntensity < 8) {
+    moatSource = l(
+      `Gross margin ${gm}% with capex intensity only ${capexIntensity}% of revenue points to an asset-light moat — pricing power from brand, IP, or switching costs, not from owning more physical capacity than rivals. This kind tends to survive a capex-cycle downturn intact.`,
+      `毛利率 ${gm}%,资本开支仅占营收 ${capexIntensity}%,指向轻资产护城河——定价权来自品牌、专利或转换成本,而非比对手拥有更多物理产能。这类护城河在资本开支周期下行时通常能保持完整。`
+    );
+  } else if (capexIntensity > 15) {
+    moatSourceIsCyclical = true;
+    moatSource = l(
+      `Capex intensity ${capexIntensity}% of revenue is heavy — this margin profile looks scale- or capacity-driven, not brand- or switching-cost-driven. That moat is rented from the capex cycle, not owned outright: if industry-wide capex growth decelerates and utilization drops, ROE compresses with it. Cannot verify from this data whether that cycle is turning.`,
+      `资本开支占营收 ${capexIntensity}%,偏重——这种利润率画像更像规模/产能驱动,而非品牌或转换成本驱动。这条护城河是从资本开支周期「租」来的,不是稳拿的:一旦全行业资本开支增速放缓、产能利用率下降,ROE 会跟着压缩。当前数据无法判断这个周期是否正在转向。`
+    );
+  } else {
+    moatSource = l(
+      `Gross margin ${gm}% and capex intensity ${capexIntensity}% together don't cleanly fit either an asset-light or a scale-driven pattern — the moat source is ambiguous from financials alone and needs qualitative work (customer concentration, switching costs, competitive response).`,
+      `毛利率 ${gm}% 与资本开支强度 ${capexIntensity}% 不完全符合轻资产或规模驱动中任何一种典型模式——单靠财务数据无法判断护城河来源,需要定性研究(客户集中度、转换成本、竞争反应)。`
+    );
+  }
 
   let quality = 0;
   if (fcf !== null && fcf > 0) quality += 15;
@@ -83,7 +114,12 @@ export function buffett(input: CommitteeInput): PersonaOpinion {
     else if (pe > 22) valuationPenalty = 6;
   }
 
-  const rating = clamp(Math.round(moat * 0.45 + quality + 20 - valuationPenalty), 10, 90);
+  const cyclicalMoatPenalty = moatSourceIsCyclical ? 6 : 0;
+  const rating = clamp(
+    Math.round(moat * 0.45 + quality + 20 - valuationPenalty - cyclicalMoatPenalty),
+    10,
+    90
+  );
 
   const fcfWord = fcf !== null ? (fcf > 0 ? { en: "positive", zh: "为正" } : { en: "negative", zh: "为负" }) : { en: "missing", zh: "缺失" };
   const args = [
@@ -94,6 +130,7 @@ export function buffett(input: CommitteeInput): PersonaOpinion {
       ),
       ids(ctx, "gross_margin", "net_margin", "roe")
     ),
+    arg(moatSource, ids(ctx, "gross_margin", "capex_intensity"), gm === null || capexIntensity === null),
     arg(
       l(
         `Free cash flow is ${fcfWord.en} (${pct(fcfYoy)} YoY); revenue ${pct(revYoy)} YoY. A business is ultimately worth the cash it produces over its lifetime — not its story.`,
@@ -146,6 +183,17 @@ export function buffett(input: CommitteeInput): PersonaOpinion {
           `Debt/Equity ${de}:杠杆放大一切,包括错误。`
         ),
         ids(ctx, "debt_to_equity")
+      )
+    );
+  if (moatSourceIsCyclical)
+    risks.push(
+      arg(
+        l(
+          "The cyclicality question this evidence set cannot answer: does ROE hold if industry-wide capex growth decelerates and utilization falls, or does it compress with the cycle? Treat the current moat score as a snapshot, not a durability guarantee.",
+          "这份证据无法回答的周期性问题:如果全行业资本开支增速放缓、产能利用率下降,ROE 还能维持吗,还是会随周期压缩?当前护城河评分只是一张快照,不是持续性的保证。"
+        ),
+        ids(ctx, "capex_intensity"),
+        true
       )
     );
 
