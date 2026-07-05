@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { cookies } from "next/headers";
-import { analyzeTicker } from "@/lib/analyze";
+import { analyzeTicker, getEnrichedCommittee } from "@/lib/analyze";
 import { PERSONAS, PERSONA_ORDER } from "@/lib/committee/meta";
-import type { PersonaId } from "@/lib/types";
-import { langFromCookie, pick } from "@/lib/i18n";
+import type { PersonaId, PersonaOpinion } from "@/lib/types";
+import { Lang, langFromCookie, pick } from "@/lib/i18n";
 import { EvidenceProvider } from "@/components/evidence-drawer";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { CommitteeCard } from "@/components/committee-card";
@@ -40,6 +41,10 @@ export default async function AssetPage({
     : undefined;
   const lang = langFromCookie((await cookies()).get("lang")?.value);
   const zh = lang === "zh";
+  // When the LLM deliberation layer is configured, the committee section is
+  // streamed in behind Suspense so the deterministic result paints instantly;
+  // otherwise there's nothing to wait for and we render it synchronously.
+  const llmEnabled = !!process.env.ANTHROPIC_API_KEY;
   const r = await analyzeTicker(decodeURIComponent(ticker), { holdingTickers });
   if (!r) notFound();
 
@@ -256,20 +261,32 @@ export default async function AssetPage({
               ? "Committee Debate · 委员会辩论 — 八位委员,同一组证据"
               : "Committee Debate — eight members, one body of evidence"}
           </h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {PERSONA_ORDER.map((pid) => {
-              const op = r.opinions.find((o) => o.persona === pid)!;
-              return (
-                <CommitteeCard
-                  key={pid}
-                  opinion={op}
-                  meta={PERSONAS[pid]}
-                  allNames={personaNames}
+          {llmEnabled ? (
+            <Suspense
+              fallback={
+                <CommitteeGrid
+                  opinions={r.opinions}
+                  personaNames={personaNames}
                   lang={lang}
+                  pending
                 />
-              );
-            })}
-          </div>
+              }
+            >
+              <CommitteeCards
+                ticker={r.asset.ticker}
+                holdingTickers={holdingTickers ?? []}
+                base={r.opinions}
+                personaNames={personaNames}
+                lang={lang}
+              />
+            </Suspense>
+          ) : (
+            <CommitteeGrid
+              opinions={r.opinions}
+              personaNames={personaNames}
+              lang={lang}
+            />
+          )}
         </div>
 
         {/* ---- Evidence panel ---- */}
@@ -379,6 +396,76 @@ function FinancialSections({
           </div>
         ))}
     </div>
+  );
+}
+
+// Presentational committee grid, shared by the synchronous path, the Suspense
+// fallback (deterministic cards + a "deepening" hint) and the streamed result.
+function CommitteeGrid({
+  opinions,
+  personaNames,
+  lang,
+  pending = false,
+}: {
+  opinions: PersonaOpinion[];
+  personaNames: Record<string, string>;
+  lang: Lang;
+  pending?: boolean;
+}) {
+  return (
+    <>
+      {pending && (
+        <div className="mb-3 inline-flex items-center gap-2 text-[11px] text-muted">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          {lang === "zh"
+            ? "LLM 深化审议中,先展示规则引擎结论…"
+            : "LLM deliberation in progress — showing rule-engine conclusions…"}
+        </div>
+      )}
+      <div className="grid md:grid-cols-2 gap-4">
+        {PERSONA_ORDER.map((pid) => {
+          const op = opinions.find((o) => o.persona === pid)!;
+          return (
+            <CommitteeCard
+              key={pid}
+              opinion={op}
+              meta={PERSONAS[pid]}
+              allNames={personaNames}
+              lang={lang}
+            />
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Async boundary: awaits the LLM-deepened committee (its own cache), falling
+// back to the deterministic opinions if the layer is unavailable or errors.
+async function CommitteeCards({
+  ticker,
+  holdingTickers,
+  base,
+  personaNames,
+  lang,
+}: {
+  ticker: string;
+  holdingTickers: string[];
+  base: PersonaOpinion[];
+  personaNames: Record<string, string>;
+  lang: Lang;
+}) {
+  const enriched = await getEnrichedCommittee(ticker, holdingTickers);
+  const opinions = enriched?.opinions ?? base;
+  return (
+    <>
+      {enriched?.warning && (
+        <div className="mb-3">
+          <WarnBadge>{pick(enriched.warning, lang)}</WarnBadge>
+        </div>
+      )}
+      <CommitteeGrid opinions={opinions} personaNames={personaNames} lang={lang} />
+    </>
   );
 }
 

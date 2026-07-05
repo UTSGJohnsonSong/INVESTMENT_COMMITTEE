@@ -1,6 +1,6 @@
 // Orchestrator: resolve asset -> fetch evidence -> normalize -> committee ->
 // synthesis. This is Step 1-6 of the product spec's analysis flow.
-import type { AnalysisResult, AssetInfo } from "@/lib/types";
+import type { AnalysisResult, AssetInfo, PersonaOpinion } from "@/lib/types";
 import { L, l } from "@/lib/i18n";
 import {
   getCompanyFacts,
@@ -271,10 +271,10 @@ async function runAnalysis(
     portfolioContext,
   });
 
-  // Optional LLM layer: deepens qualitative text only (evidence-only, ids
-  // validated); scores/vetoes stay deterministic. No-op without an API key.
-  const llm = await enrichWithLLM({ asset, evidence: ctx.evidence, opinions });
-  if (llm.warning) dataWarnings.push(llm.warning);
+  // NB: the optional LLM deliberation layer used to run here, on the critical
+  // path. It now lives in getEnrichedCommittee (below) so the page can paint
+  // the deterministic result immediately and stream the LLM-deepened committee
+  // cards in afterwards. This keeps the cached analysis fast to compute.
 
   const result: AnalysisResult = {
     asset,
@@ -291,4 +291,56 @@ async function runAnalysis(
   };
 
   return result;
+}
+
+export interface EnrichedCommittee {
+  opinions: PersonaOpinion[];
+  warning: L | null;
+}
+
+// The optional LLM deliberation layer, split off the critical path and cached
+// on its own (keyed by ticker + holdings) so the page can stream it in behind a
+// Suspense boundary. The deterministic base analysis is reused from its own
+// cache (usually an instant hit, since the page just rendered it), then the LLM
+// deepens a CLONE of the opinions — never the cached objects. Returns null when
+// there's no base result or no API key path produced anything renderable; the
+// caller then shows the deterministic committee unchanged.
+async function computeEnrichedCommittee(
+  ticker: string,
+  holdingTickers: string[]
+): Promise<EnrichedCommittee | null> {
+  const base = await analyzeTicker(ticker, { holdingTickers });
+  if (!base) return null;
+  const opinions = structuredClone(base.opinions);
+  const { enriched, warning } = await enrichWithLLM({
+    asset: base.asset,
+    evidence: base.evidence,
+    opinions,
+  });
+  if (!enriched && !warning) return null;
+  return { opinions, warning: warning ?? null };
+}
+
+const cachedEnrichedCommittee = unstable_cache(
+  computeEnrichedCommittee,
+  ["committee-llm-v1"],
+  { revalidate: 600 }
+);
+
+export async function getEnrichedCommittee(
+  ticker: string,
+  holdingTickers: string[]
+): Promise<EnrichedCommittee | null> {
+  try {
+    return await cachedEnrichedCommittee(ticker, holdingTickers);
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("incrementalCache missing")) {
+      try {
+        return await computeEnrichedCommittee(ticker, holdingTickers);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 }
