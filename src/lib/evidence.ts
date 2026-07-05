@@ -106,10 +106,10 @@ export function buildEvidence(input: {
       direction,
       tags: ["macro"],
       citation: {
-        sourceName: `FRED ${m.seriesId}`,
+        sourceName: m.sourceName ? `${m.sourceName} · ${m.seriesId}` : `FRED ${m.seriesId}`,
         sourceUrl: m.url,
         sourceLevel: "P0",
-        sourceType: "fred_series",
+        sourceType: "macro_series",
         publishedAt: m.observationDate,
         retrievedAt: m.retrievedAt,
         seriesId: m.seriesId,

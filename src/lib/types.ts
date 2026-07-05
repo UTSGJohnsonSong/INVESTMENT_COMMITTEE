@@ -186,6 +186,8 @@ export interface MacroSnapshot {
   observationDate: string;
   retrievedAt: string;
   url: string;
+  /** publisher of this datum, e.g. "U.S. Treasury", "NY Fed (EFFR)", "BLS", "FRED" */
+  sourceName?: string;
   /** derived, e.g. YoY for CPI */
   derived?: string;
   /** true when served from an expired cache entry after live fetches failed */
