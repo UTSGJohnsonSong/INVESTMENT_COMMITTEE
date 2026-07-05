@@ -1,10 +1,12 @@
 # Investment Committee
 
-### 🔴 Live demo → **https://investment-committee.vercel.app**
+### 🔴 Live demo → **https://investment-committee-silk.vercel.app**
 
 > Try it now, no setup required. Search any US stock/ETF, read the committee debate, and trace every claim back to its source.
 
-[![Live Demo](https://img.shields.io/badge/Live_Demo-investment--committee.vercel.app-black?style=for-the-badge&logo=vercel)](https://investment-committee.vercel.app)
+[![Live Demo](https://img.shields.io/badge/Live_Demo-investment--committee--silk.vercel.app-black?style=for-the-badge&logo=vercel)](https://investment-committee-silk.vercel.app)
+
+Mirror: https://investment-committee.vercel.app
 
 An evidence-first investment decision support system. Eight committee members — decision frameworks inspired by published investment philosophies — debate the same body of primary-source evidence and synthesize a structured decision with vetoes, scenario ranges and kill criteria.
 
